@@ -19,6 +19,7 @@ from app.api.websocket import websocket_endpoint
 from app.db.connection import async_session, engine
 from app.graph_engine.propagation import build_networkx_graph
 from app.graph_engine.topology import MVP_EDGES, MVP_NODES
+from app.causal_discovery.api.routes import router as causal_router
 from app.causal_discovery.models import create_hypertable_if_needed, create_node_values_index
 from app.models.graph import Base, Edge, Node
 
@@ -146,6 +147,7 @@ app.include_router(graph_router)
 app.include_router(agent_router)
 app.include_router(portfolio_router)
 app.include_router(annotations_router)
+app.include_router(causal_router)
 app.add_api_websocket_route("/ws", websocket_endpoint)
 
 
