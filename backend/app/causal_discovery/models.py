@@ -12,7 +12,7 @@ class NodeValue(Base):
     __tablename__ = "node_values"
     node_id = Column(String(64), nullable=False, primary_key=True)
     ts = Column(DateTime(timezone=True), nullable=False, primary_key=True)
-    value = Column(Float, nullable=False)
+    value = Column(Float(precision=53), nullable=False)
     source = Column(String(64), nullable=False)
 
 
