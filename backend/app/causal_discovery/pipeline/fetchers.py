@@ -25,33 +25,92 @@ logger = logging.getLogger(__name__)
 # yfinance
 # ---------------------------------------------------------------------------
 
+# Rate-limit settings to avoid Yahoo Finance 429 errors.
+# Yahoo blocks IPs that send too many requests in a short window.
+# Downloading one ticker at a time with delays is more reliable than bulk.
+_YF_DELAY_BETWEEN_TICKERS: float = 2.0   # seconds between individual downloads
+_YF_BATCH_SIZE: int = 5                    # pause longer every N tickers
+_YF_BATCH_PAUSE: float = 10.0             # seconds to pause between batches
+_YF_MAX_RETRIES: int = 3                   # retries per ticker on failure
+_YF_RETRY_BACKOFF_BASE: float = 5.0       # exponential backoff base (5s, 10s, 20s)
+
+
+def _yfinance_download_single(ticker: str, period: str = "5y") -> pd.Series | None:
+    """Download close prices for a single ticker. Returns None on failure."""
+    try:
+        raw = yf.download(ticker, period=period, auto_adjust=True, progress=False)
+        if raw.empty:
+            return None
+        if isinstance(raw.columns, pd.MultiIndex):
+            series = raw["Close"].iloc[:, 0]
+        else:
+            series = raw["Close"]
+        series.name = ticker
+        return series
+    except Exception as e:
+        logger.warning("yfinance download failed for %s: %s", ticker, e)
+        return None
+
+
 def _yfinance_download_sync(
     tickers: list[str],
     period: str = "5y",
 ) -> pd.DataFrame:
-    """Synchronous yfinance download returning a clean DataFrame.
+    """Download close prices for multiple tickers sequentially with rate-limit handling.
 
-    Returns a DataFrame with columns = tickers, index = dates (DatetimeIndex),
-    values = Close prices.
+    Downloads one ticker at a time with delays to avoid Yahoo Finance 429 errors.
+    Retries failed tickers with exponential backoff.
     """
-    raw = yf.download(tickers, period=period, auto_adjust=True, progress=False)
+    import time
 
-    if raw.empty:
+    results: dict[str, pd.Series] = {}
+    failed: list[str] = []
+
+    for i, ticker in enumerate(tickers):
+        # Batch pause: longer delay every N tickers
+        if i > 0 and i % _YF_BATCH_SIZE == 0:
+            logger.info("yfinance batch pause (%d/%d tickers done, waiting %.0fs)",
+                        i, len(tickers), _YF_BATCH_PAUSE)
+            time.sleep(_YF_BATCH_PAUSE)
+        elif i > 0:
+            time.sleep(_YF_DELAY_BETWEEN_TICKERS)
+
+        series = _yfinance_download_single(ticker, period)
+        if series is not None and not series.empty:
+            results[ticker] = series
+            logger.info("yfinance %s: %d rows", ticker, len(series))
+        else:
+            failed.append(ticker)
+            logger.warning("yfinance %s: failed (will retry)", ticker)
+
+    # Retry failed tickers with exponential backoff
+    for retry in range(_YF_MAX_RETRIES):
+        if not failed:
+            break
+        wait = _YF_RETRY_BACKOFF_BASE * (2 ** retry)
+        logger.info("yfinance retry %d/%d: waiting %.0fs then retrying %d tickers",
+                     retry + 1, _YF_MAX_RETRIES, wait, len(failed))
+        time.sleep(wait)
+
+        still_failed = []
+        for ticker in failed:
+            time.sleep(_YF_DELAY_BETWEEN_TICKERS)
+            series = _yfinance_download_single(ticker, period)
+            if series is not None and not series.empty:
+                results[ticker] = series
+                logger.info("yfinance %s: %d rows (retry %d)", ticker, len(series), retry + 1)
+            else:
+                still_failed.append(ticker)
+        failed = still_failed
+
+    if failed:
+        logger.error("yfinance: %d tickers permanently failed: %s", len(failed), failed)
+
+    if not results:
         return pd.DataFrame()
 
-    # yfinance returns multi-level columns (Price, Ticker) for multiple tickers,
-    # but a single-level column for a single ticker.
-    if isinstance(raw.columns, pd.MultiIndex):
-        # Extract the "Close" price level
-        df = raw["Close"]
-    else:
-        # Single ticker — raw columns are just price types like "Close", "Open", etc.
-        df = raw[["Close"]].copy()
-        df.columns = [tickers[0]]
-
-    # Ensure column names are plain strings
+    df = pd.DataFrame(results)
     df.columns = [str(c) for c in df.columns]
-
     return df
 
 
@@ -59,7 +118,10 @@ async def fetch_yfinance_history(
     tickers: list[str],
     period: str = "5y",
 ) -> pd.DataFrame:
-    """Async wrapper around yfinance download.
+    """Async wrapper around yfinance download with rate-limit handling.
+
+    Downloads tickers one at a time with delays to avoid Yahoo Finance 429 errors.
+    Failed tickers are retried with exponential backoff (5s, 10s, 20s).
 
     Parameters
     ----------
