@@ -42,6 +42,14 @@ class Settings(BaseSettings):
     edge_weight_base_ratio: float = 0.6
     centrality_cache_ttl: int = 300
 
+    # Causal Discovery
+    causal_zscore_window: int = 90
+    causal_backfill_years: int = 5
+    causal_max_display_nodes: int = 100
+    causal_discovery_algorithm: str = "pcmci"
+    causal_min_edge_weight: float = 0.1
+    causal_anchor_nodes: str = "sp500,nasdaq,us_gdp_growth,unemployment_rate"
+
     model_config = {"env_file": ["../.env", ".env"]}
 
 
