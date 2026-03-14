@@ -18,3 +18,5 @@ websockets==14.1
 yfinance==0.2.51
 asyncpraw==7.7.1
 pandas>=2.2.0
+tigramite>=5.2
+lingam>=1.12
