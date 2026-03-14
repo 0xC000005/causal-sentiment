@@ -251,9 +251,9 @@ backend/app/causal_discovery/
 |-- pipeline/
 |   |-- __init__.py
 |   |-- sources.py             <-- Ticker/series registry (what to fetch, node_id mappings)
-|   |-- fetchers.py            <-- yfinance, FRED bulk fetch functions
+|   |-- fetchers.py            <-- yfinance + FRED bulk fetch with rate-limit handling
 |   |-- backfill.py            <-- One-time historical backfill job (5 years)
-|   |-- scheduler.py           <-- Incremental daily update jobs
+|   |-- scheduler.py           <-- Incremental daily update jobs (planned)
 |
 |-- engine/
 |   |-- __init__.py
@@ -267,23 +267,25 @@ backend/app/causal_discovery/
     |-- __init__.py
     |-- routes.py              <-- REST API endpoints
 
-frontend/src/components/causal-discovery/
+frontend/src/components/causal-discovery/   (planned — not yet implemented)
 |-- CausalGraph3D.tsx          <-- 3D visualization (or mode switch on existing Graph3D)
 |-- CausalPanel.tsx            <-- Controls, stats, configuration
 ```
 
 ## API Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/causal/backfill` | Trigger historical data backfill |
-| GET | `/api/causal/backfill/status` | Check backfill progress |
-| GET | `/api/causal/matrix?days=252` | Get aligned daily matrix |
-| POST | `/api/causal/discover` | Run causal discovery on stored data |
-| GET | `/api/causal/graph` | Get discovered graph (nodes + edges + scores) |
-| GET | `/api/causal/node/{id}` | Get single node detail (z-score history, edges) |
-| GET | `/api/causal/sources` | List all registered data sources |
-| POST | `/api/causal/anchors` | Set/update anchor nodes for polarity |
+| Method | Path | Description | Status |
+|--------|------|-------------|--------|
+| POST | `/api/causal/backfill` | Trigger historical data backfill (background) | Implemented |
+| GET | `/api/causal/backfill/status` | Check backfill progress | Implemented |
+| POST | `/api/causal/discover` | Run causal discovery on stored data (background) | Implemented |
+| GET | `/api/causal/discover/status` | Check discovery progress | Implemented |
+| GET | `/api/causal/graph` | Get discovered graph (nodes + edges + scores) | Implemented |
+| GET | `/api/causal/sources` | List all registered data sources | Implemented |
+| GET | `/api/causal/stats` | Row counts and date ranges per node | Implemented |
+| GET | `/api/causal/matrix?days=252` | Get aligned daily matrix | Planned |
+| GET | `/api/causal/node/{id}` | Get single node detail (z-score history, edges) | Planned |
+| POST | `/api/causal/anchors` | Set/update anchor nodes for polarity | Planned |
 
 ## Integration With Main Codebase
 
@@ -300,18 +302,18 @@ Everything else is self-contained within `backend/app/causal_discovery/`.
 
 ## Dependencies
 
-New Python packages required:
+New Python packages (in `requirements.txt`):
 
 ```
+pandas>=2.2.0        # Matrix operations, DataFrame alignment (MIT)
 tigramite>=5.2       # PCMCI/PCMCI+ for time-series causal discovery (GPL-3.0)
 lingam>=1.12         # VARLiNGAM for causal ordering (MIT)
-dowhy>=0.14          # Edge validation: arrow_strength, refute_causal_structure (MIT)
 ```
 
-Optional (installed via conda, not pip):
+Planned (not yet added):
 ```
-graph-tool           # Bayesian network reconstruction, DynamicsBlockState (LGPL-3.0)
-                     # Install: conda install -c conda-forge graph-tool
+dowhy>=0.14          # Edge validation: arrow_strength, refute_causal_structure (MIT)
+graph-tool           # Bayesian network reconstruction (LGPL-3.0, conda only)
 ```
 
 Already available in the project:
@@ -332,7 +334,7 @@ causal_backfill_years: int = 5           # How far back to fetch history
 causal_max_display_nodes: int = 100      # Max nodes to show in visualization
 causal_discovery_algorithm: str = "pcmci" # "pcmci" or "varlingam"
 causal_min_edge_weight: float = 0.1      # Minimum weight to display an edge
-causal_anchor_nodes: list = ["sp500", "nasdaq", "us_gdp_growth", "unemployment_rate"]
+causal_anchor_nodes: str = "sp500,nasdaq,us_gdp_growth,unemployment_rate"  # comma-separated (env vars are strings)
 ```
 
 ## What's Manual vs. Computational
