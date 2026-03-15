@@ -53,7 +53,7 @@ export default function CausalNodePanel() {
   const barPosition = ((display_sentiment + 1) / 2) * 100;
 
   return (
-    <div className="absolute top-4 right-4 w-80 bg-gray-900/95 backdrop-blur border border-gray-700 rounded-lg shadow-xl p-4 text-white z-10 max-h-[calc(100vh-2rem)] overflow-y-auto">
+    <div className="absolute top-4 left-4 w-80 bg-gray-900/95 backdrop-blur border border-gray-700 rounded-lg shadow-xl p-4 text-white z-10 max-h-[calc(100vh-2rem)] overflow-y-auto">
       {/* Header */}
       <div className="flex items-start justify-between mb-1">
         <div className="min-w-0 flex-1">
