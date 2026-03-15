@@ -4,6 +4,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useCausalStore } from "@/hooks/useCausalStore";
 import { useGraphStore } from "@/hooks/useGraphData";
 
+const ALGORITHM_EXPLANATIONS: Record<string, string> = {
+  pcmci: "PCMCI+ discovers directed causal edges by testing if past values of A predict future B, after controlling for all other variables. Only statistically significant relationships (p < 0.01) survive.",
+  granger: "Granger causality tests each pair independently: does past A help predict B? Simpler than PCMCI+ but doesn't control for confounders, so more edges may be indirect.",
+};
+
+const SCORING_EXPLANATIONS: Record<string, string> = {
+  zscore: "Z-Score measures how unusual each factor's current value is relative to its 90-day rolling average. The network shows which factors' deviations from normal predict each other.",
+  returns: "Log returns capture day-to-day price changes. The network shows which factors' daily moves predict other factors' moves the next day — a trader's perspective.",
+  volatility: "Rolling volatility (20-day) measures how choppy each factor is. The network shows how fear and uncertainty spread between factors — a risk manager's perspective.",
+};
+
 export default function CausalPanel() {
   const [collapsed, setCollapsed] = useState(true);
   const [algorithm, setAlgorithm] = useState("pcmci");
@@ -287,6 +298,20 @@ export default function CausalPanel() {
                         {currentGraph.summary.edge_count}
                       </span>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Explanation */}
+              {currentGraph && (
+                <div className="mb-3 bg-gray-800/50 rounded p-2 text-[10px] text-gray-400 space-y-1.5">
+                  <div className="text-[10px] text-gray-500 uppercase font-semibold">How to read this graph</div>
+                  <div>{ALGORITHM_EXPLANATIONS[currentGraph.algorithm] || "Causal edges discovered from historical data."}</div>
+                  <div>{SCORING_EXPLANATIONS[currentGraph.parameters?.scoring] || ""}</div>
+                  <div>
+                    <span className="text-green-400">Green</span> = above average (positive polarity) ·
+                    <span className="text-red-400"> Red</span> = below average or negative polarity ·
+                    Node size = importance (centrality in the discovered network)
                   </div>
                 </div>
               )}
