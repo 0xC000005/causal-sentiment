@@ -414,6 +414,7 @@ async def list_graphs(
 async def get_graph(
     id: int | None = None,
     run_name: str | None = None,
+    top_n: int | None = None,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Get a stored discovered graph.
@@ -421,6 +422,8 @@ async def get_graph(
     - By id: ``GET /api/causal/graph?id=42``
     - Latest for a run_name: ``GET /api/causal/graph?run_name=default``
     - Latest overall: ``GET /api/causal/graph``
+    - With top_n: ``GET /api/causal/graph?top_n=10`` — keep only the top N
+      most important nodes and edges between them.
 
     Returns nodes + edges in a format compatible with the frontend's GraphData.
     """
@@ -446,6 +449,20 @@ async def get_graph(
             detail="No discovered graph found. Run POST /api/causal/discover first.",
         )
 
+    nodes = graph.nodes
+    edges = graph.edges
+
+    if top_n is not None and top_n > 0:
+        # Sort nodes by importance (descending), keep top_n
+        sorted_nodes = sorted(nodes, key=lambda n: n.get("importance", 0.0), reverse=True)
+        nodes = sorted_nodes[:top_n]
+        surviving_ids = {n["id"] for n in nodes}
+        # Filter edges to only include those between surviving nodes
+        edges = [
+            e for e in edges
+            if e["source"] in surviving_ids and e["target"] in surviving_ids
+        ]
+
     return {
         "id": graph.id,
         "run_name": graph.run_name,
@@ -454,11 +471,11 @@ async def get_graph(
         "data_start": graph.data_start.isoformat() if graph.data_start else None,
         "data_end": graph.data_end.isoformat() if graph.data_end else None,
         "parameters": graph.parameters,
-        "nodes": graph.nodes,
-        "edges": graph.edges,
+        "nodes": nodes,
+        "edges": edges,
         "summary": {
-            "node_count": graph.node_count,
-            "edge_count": graph.edge_count,
+            "node_count": len(nodes),
+            "edge_count": len(edges),
         },
     }
 
