@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useGraphStore } from "@/hooks/useGraphData";
 import { useNodeSelection } from "@/hooks/useNodeSelection";
+import { useCausalStore } from "@/hooks/useCausalStore";
 import {
   edgeDirectionColor,
   sentimentToColor,
@@ -38,6 +39,8 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
   const clustered = useGraphStore((s) => s.clustered);
   const focusNodeId = useGraphStore((s) => s.focusNodeId);
   const { handleNodeClick } = useNodeSelection();
+  const graphSource = useCausalStore((s) => s.graphSource);
+  const isDiscovered = graphSource === "discovered";
   const graphRef = useRef<any>(null);
 
   const simulation = useGraphStore((s) => s.simulation);
@@ -203,8 +206,12 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
           if (simAffectedEdges) {
             const src = typeof link.source === "string" ? link.source : link.source?.id;
             const tgt = typeof link.target === "string" ? link.target : link.target?.id;
-            if (simAffectedEdges.has(`${src}__${tgt}`)) return "#f97316"; // Orange for affected
-            return "#1f2937"; // Very dim for unaffected
+            if (simAffectedEdges.has(`${src}__${tgt}`)) return "#f97316";
+            return "#1f2937";
+          }
+          if (isDiscovered) {
+            // Neutral grey edges — node colors tell the sentiment story
+            return link.direction === "negative" ? "rgba(120,120,120,0.3)" : "rgba(160,160,160,0.5)";
           }
           return edgeDirectionColor(link.direction);
         }}
@@ -214,6 +221,11 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
             const tgt = typeof link.target === "string" ? link.target : link.target?.id;
             if (simAffectedEdges.has(`${src}__${tgt}`)) return 2.5;
             return 0.3;
+          }
+          if (isDiscovered) {
+            // Thickness = edge weight strength. Negative edges are thinner (dashed effect via opacity)
+            const w = link.weight ?? 0.5;
+            return link.direction === "negative" ? Math.max(0.3, w * 2) : Math.max(0.5, w * 4);
           }
           return Math.max(0.5, (link.weight ?? 0.5) * 3);
         }}
@@ -227,8 +239,9 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
           return 2;
         }}
         linkDirectionalParticleWidth={(link: any) =>
-          Math.max(0.5, (link.weight ?? 0.5) * 2)
+          isDiscovered ? Math.max(0.3, (link.weight ?? 0.5) * 1.5) : Math.max(0.5, (link.weight ?? 0.5) * 2)
         }
+        linkDirectionalParticleColor={isDiscovered ? (() => "rgba(200,200,200,0.6)") : undefined}
         linkDirectionalParticleSpeed={(link: any) => {
           if (simAffectedEdges) {
             const src = typeof link.source === "string" ? link.source : link.source?.id;
