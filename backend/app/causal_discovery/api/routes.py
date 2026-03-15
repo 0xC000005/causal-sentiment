@@ -180,12 +180,13 @@ async def _run_discovery_task(
             z = latest_zscores.get(node_id, 0.0)
             p = polarity.get(node_id, 0)
             imp = importance_map.get(node_id, {})
-            # Display sentiment: use polarity if available, otherwise use raw z-score sign
-            # This ensures nodes unreachable from anchors still show color
+            # Display sentiment: polarity × normalized z-score
+            # Bidirectional anchor propagation should reach all connected nodes.
+            # Fallback to raw z-score for any still-unreachable nodes (disconnected components)
             if p != 0:
                 display = p * min(abs(z) / 3.0, 1.0)
             else:
-                display = z / 3.0  # No polarity info — use z-score directly
+                display = z / 3.0  # Disconnected from all anchors — use z-score directly
             nodes_json.append({
                 "id": node_id,
                 "zscore": round(z, 4),
