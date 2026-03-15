@@ -203,19 +203,26 @@ async def _run_discovery_task(
         ranking = rank_nodes_by_importance(g, top_n=100)
         importance_map = {r["node_id"]: r for r in ranking}
 
+        # For display, always compute z-scores on top of the scored data.
+        # Raw returns/volatility values are near-zero and don't produce visible colors.
+        # Z-scoring normalizes them to "how unusual is today's value" regardless of scoring method.
+        from app.causal_discovery.engine.scoring import compute_rolling_zscore
+        display_zscores_df = compute_rolling_zscore(zscores, window=zscore_window, clamp=3.0)
         latest_zscores: dict[str, float] = {}
-        if len(zscores) > 0:
-            last_row = zscores.iloc[-1]
-            latest_zscores = {col: float(last_row[col]) for col in zscores.columns}
+        if len(display_zscores_df) > 0:
+            last_row = display_zscores_df.iloc[-1]
+            latest_zscores = {col: float(last_row[col]) for col in display_zscores_df.columns}
 
         nodes_json = []
         for node_id in g.nodes():
             z = latest_zscores.get(node_id, 0.0)
             p = polarity.get(node_id, 0)
             imp = importance_map.get(node_id, {})
-            # Display sentiment: polarity × normalized z-score
-            # 9 anchors + bidirectional propagation covers all connected nodes.
-            # Nodes with polarity=0 are truly disconnected from all anchors.
+            # Display sentiment: polarity × normalized z-score of the scored data.
+            # This works for all scoring methods:
+            # - zscore: z-score of z-score ≈ z-score (idempotent-ish)
+            # - returns: z-score of returns = "how unusual is today's return"
+            # - volatility: z-score of volatility = "how unusual is today's volatility"
             display = p * min(abs(z) / 3.0, 1.0)
             nodes_json.append({
                 "id": node_id,

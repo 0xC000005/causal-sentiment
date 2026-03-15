@@ -90,10 +90,15 @@ def propagate_polarity(
                     visited.add(neighbor)
                     queue.append((neighbor, neighbor_pol))
 
-    # Convert accumulated signal to discrete polarity
+    # Convert accumulated signal to discrete polarity.
+    # Anchors always keep their defined polarity (cannot be overridden by
+    # conflicting path signals).
     polarity: Dict[str, int] = {}
     for node_id, val in signal.items():
-        if val > 0:
+        # Lock anchor polarity — don't let path signals cancel it
+        if node_id in anchors:
+            polarity[node_id] = anchors[node_id]
+        elif val > 0:
             polarity[node_id] = 1
         elif val < 0:
             polarity[node_id] = -1
