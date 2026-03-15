@@ -104,7 +104,19 @@ def _yfinance_download_sync(
         failed = still_failed
 
     if failed:
-        logger.error("yfinance: %d tickers permanently failed: %s", len(failed), failed)
+        logger.warning("yfinance: %d tickers failed via yfinance library, trying direct Yahoo API fallback: %s",
+                        len(failed), failed)
+        # Fallback: fetch failed tickers directly from Yahoo Finance API with browser headers
+        for ticker in list(failed):
+            time.sleep(_YF_DELAY_BETWEEN_TICKERS)
+            series = _yahoo_direct_download_single(ticker, period)
+            if series is not None and not series.empty:
+                results[ticker] = series
+                failed.remove(ticker)
+                logger.info("yahoo direct %s: %d rows (fallback)", ticker, len(series))
+
+    if failed:
+        logger.error("yfinance: %d tickers permanently failed (both yfinance and direct): %s", len(failed), failed)
 
     if not results:
         return pd.DataFrame()
@@ -114,14 +126,58 @@ def _yfinance_download_sync(
     return df
 
 
+# ---------------------------------------------------------------------------
+# Yahoo Finance direct API fallback
+# ---------------------------------------------------------------------------
+
+# When yfinance gets rate-limited (429), Yahoo blocks the default Python User-Agent.
+# Fetching directly with browser-like headers bypasses this. Used as a fallback only.
+_YAHOO_BROWSER_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+}
+
+
+def _yahoo_direct_download_single(ticker: str, period: str = "5y") -> pd.Series | None:
+    """Fetch close prices directly from Yahoo Finance chart API with browser headers.
+
+    Fallback for when yfinance is rate-limited (429). Returns a pandas Series
+    with DatetimeIndex and close prices, or None on failure.
+    """
+    import httpx as _httpx
+    from datetime import datetime, timezone
+
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+        r = _httpx.get(url, headers=_YAHOO_BROWSER_HEADERS,
+                       params={"interval": "1d", "range": period}, timeout=30)
+        if r.status_code != 200:
+            logger.warning("Yahoo direct API returned %d for %s", r.status_code, ticker)
+            return None
+
+        data = r.json()
+        chart = data["chart"]["result"][0]
+        timestamps = chart["timestamp"]
+        closes = chart["indicators"]["quote"][0]["close"]
+
+        dates = [datetime.fromtimestamp(ts, tz=timezone.utc) for ts in timestamps]
+        series = pd.Series(closes, index=pd.DatetimeIndex(dates), name=ticker, dtype=float)
+        series = series.dropna()
+        return series
+    except Exception as e:
+        logger.warning("Yahoo direct API failed for %s: %s", ticker, e)
+        return None
+
+
 async def fetch_yfinance_history(
     tickers: list[str],
     period: str = "5y",
 ) -> pd.DataFrame:
-    """Async wrapper around yfinance download with rate-limit handling.
+    """Async wrapper for Yahoo Finance data download.
 
-    Downloads tickers one at a time with delays to avoid Yahoo Finance 429 errors.
-    Failed tickers are retried with exponential backoff (5s, 10s, 20s).
+    Tries yfinance library first. If any tickers fail (e.g., 429 rate limit),
+    falls back to direct Yahoo Finance chart API with browser-like headers.
 
     Parameters
     ----------
