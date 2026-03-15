@@ -13,10 +13,11 @@ import type {
 import { API_URL } from "@/lib/config";
 
 interface DiscoveryStatus {
-  status: "idle" | "running" | "completed" | "failed";
+  state: "idle" | "running" | "completed" | "failed";
   algorithm?: string;
   scoring?: string;
   error?: string;
+  last_result?: { snapshot_id?: number } | null;
 }
 
 interface CausalStore {
@@ -124,13 +125,18 @@ export const useCausalStore = create<CausalStore>((set, get) => ({
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: DiscoveryStatus = await res.json();
 
-      if (data.status === "completed") {
+      if (data.state === "completed") {
         set({ discovering: false });
         // Refresh snapshots and load the latest graph
         await get().fetchSnapshots();
-        await get().loadGraph();
+        // Load the specific snapshot that was just created
+        if (data.last_result?.snapshot_id) {
+          await get().loadGraph(data.last_result.snapshot_id);
+        } else {
+          await get().loadGraph();
+        }
         return true;
-      } else if (data.status === "failed") {
+      } else if (data.state === "failed") {
         set({
           discovering: false,
           error: data.error || "Discovery failed",
