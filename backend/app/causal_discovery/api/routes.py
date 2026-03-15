@@ -410,6 +410,123 @@ async def list_graphs(
     ]
 
 
+@router.get("/graph/animate")
+async def get_graph_animate(
+    id: int | None = None,
+    run_name: str | None = None,
+    n_frames: int = 30,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Generate animation frames: complete correlation graph -> discovered graph.
+
+    Builds all pairwise correlations, marks which edges survive in the discovered
+    graph, then produces ``n_frames`` by progressively removing the weakest
+    non-surviving edges (weakest first).
+
+    Parameters:
+        id: Discovered graph snapshot id.
+        run_name: Lookup latest snapshot by run_name.
+        n_frames: Number of animation frames to generate (default 30).
+    """
+    import numpy as np
+    from app.causal_discovery.models import DiscoveredGraph
+    from sqlalchemy import select
+
+    # --- load discovered graph ---
+    if id is not None:
+        query = select(DiscoveredGraph).where(DiscoveredGraph.id == id)
+    elif run_name is not None:
+        query = (select(DiscoveredGraph)
+                 .where(DiscoveredGraph.run_name == run_name)
+                 .order_by(DiscoveredGraph.created_at.desc())
+                 .limit(1))
+    else:
+        query = select(DiscoveredGraph).order_by(DiscoveredGraph.created_at.desc()).limit(1)
+
+    result = await session.execute(query)
+    graph = result.scalar_one_or_none()
+    if graph is None:
+        raise HTTPException(status_code=404, detail="No discovered graph found.")
+
+    # --- load daily matrix and compute correlation ---
+    days = graph.parameters.get("days", 252) if graph.parameters else 252
+    df = await get_daily_matrix(session, days=days)
+    if df.empty or len(df.columns) < 2:
+        raise HTTPException(status_code=400, detail="Insufficient data for correlation matrix.")
+
+    corr = df.corr()
+
+    # Set of discovered edges (unordered pairs for lookup)
+    discovered_edges = set()
+    for e in graph.edges:
+        discovered_edges.add((e["source"], e["target"]))
+
+    # Build complete edge list from correlation matrix
+    columns = list(corr.columns)
+    all_edges: list[dict] = []
+    for i in range(len(columns)):
+        for j in range(i + 1, len(columns)):
+            c = corr.iloc[i, j]
+            if np.isnan(c):
+                continue
+            abs_c = abs(float(c))
+            if abs_c <= 0:
+                continue
+            src, tgt = columns[i], columns[j]
+            survives = (src, tgt) in discovered_edges or (tgt, src) in discovered_edges
+            all_edges.append({
+                "source": src,
+                "target": tgt,
+                "correlation": round(float(c), 4),
+                "abs_correlation": round(abs_c, 4),
+                "survives": survives,
+            })
+
+    # Separate surviving vs non-surviving
+    surviving = [e for e in all_edges if e["survives"]]
+    non_surviving = [e for e in all_edges if not e["survives"]]
+
+    # Sort non-surviving by absolute correlation ascending (weakest first)
+    non_surviving.sort(key=lambda e: e["abs_correlation"])
+
+    # Generate frames by removing non-surviving edges in batches
+    total_non_surviving = len(non_surviving)
+    frames: list[dict] = []
+
+    if total_non_surviving == 0 or n_frames <= 1:
+        # Frame 0: all edges; Frame 1 (or only): just surviving
+        frames.append({
+            "frame": 0,
+            "edge_count": len(all_edges),
+            "edges": all_edges,
+        })
+        if n_frames > 1:
+            frames.append({
+                "frame": 1,
+                "edge_count": len(surviving),
+                "edges": surviving,
+            })
+    else:
+        for frame_idx in range(n_frames):
+            # How many non-surviving edges to remove by this frame
+            remove_count = int(total_non_surviving * frame_idx / (n_frames - 1))
+            remaining_non_surviving = non_surviving[remove_count:]
+            frame_edges = surviving + remaining_non_surviving
+            frames.append({
+                "frame": frame_idx,
+                "edge_count": len(frame_edges),
+                "edges": frame_edges,
+            })
+
+    return {
+        "graph_id": graph.id,
+        "n_frames": len(frames),
+        "total_edges": len(all_edges),
+        "surviving_edges": len(surviving),
+        "frames": frames,
+    }
+
+
 @router.get("/graph")
 async def get_graph(
     id: int | None = None,
