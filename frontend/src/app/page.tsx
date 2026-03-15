@@ -13,6 +13,7 @@ import TopologySuggestions from "@/components/TopologySuggestions";
 import UserGuide from "@/components/UserGuide";
 import NodeLocator from "@/components/NodeLocator";
 import SimulationPanel from "@/components/SimulationPanel";
+import CausalPanel from "@/components/CausalPanel";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { useGraphStore, useGraphWebSocket } from "@/hooks/useGraphData";
 
@@ -47,6 +48,7 @@ export default function Home() {
         )}
         <Graph3D portfolioNodeIds={portfolioNodeIds} />
         <FilterBar />
+        <CausalPanel />
         <NodePanel />
         <UserGuide />
         <SimulationPanel />
