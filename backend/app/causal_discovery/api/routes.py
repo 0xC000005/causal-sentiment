@@ -180,11 +180,17 @@ async def _run_discovery_task(
             z = latest_zscores.get(node_id, 0.0)
             p = polarity.get(node_id, 0)
             imp = importance_map.get(node_id, {})
+            # Display sentiment: use polarity if available, otherwise use raw z-score sign
+            # This ensures nodes unreachable from anchors still show color
+            if p != 0:
+                display = p * min(abs(z) / 3.0, 1.0)
+            else:
+                display = z / 3.0  # No polarity info — use z-score directly
             nodes_json.append({
                 "id": node_id,
                 "zscore": round(z, 4),
                 "polarity": p,
-                "display_sentiment": round(max(-1.0, min(1.0, p * min(abs(z) / 3.0, 1.0))), 4),
+                "display_sentiment": round(max(-1.0, min(1.0, display)), 4),
                 "importance": round(imp.get("score", 0.0), 4),
             })
 

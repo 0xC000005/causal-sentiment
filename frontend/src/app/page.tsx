@@ -16,12 +16,15 @@ import SimulationPanel from "@/components/SimulationPanel";
 import CausalPanel from "@/components/CausalPanel";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { useGraphStore, useGraphWebSocket } from "@/hooks/useGraphData";
+import { useCausalStore } from "@/hooks/useCausalStore";
 
 export default function Home() {
   const fetchGraph = useGraphStore((s) => s.fetchGraph);
   const loading = useGraphStore((s) => s.loading);
   const error = useGraphStore((s) => s.error);
   const [portfolioNodeIds, setPortfolioNodeIds] = useState<string[]>([]);
+  const graphSource = useCausalStore((s) => s.graphSource);
+  const isExpert = graphSource === "expert";
 
   useGraphWebSocket();
 
@@ -47,21 +50,21 @@ export default function Home() {
           </div>
         )}
         <Graph3D portfolioNodeIds={portfolioNodeIds} />
-        <FilterBar />
+        {isExpert && <FilterBar />}
         <CausalPanel />
-        <NodePanel />
+        {isExpert && <NodePanel />}
         <UserGuide />
-        <SimulationPanel />
-        <SentimentTimeline />
+        {isExpert && <SimulationPanel />}
+        {isExpert && <SentimentTimeline />}
 
         {/* Bottom toolbar: centered */}
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-end gap-2">
-          <AgentRunLog />
-          <PredictionsPanel />
+          {isExpert && <AgentRunLog />}
+          {isExpert && <PredictionsPanel />}
           <NodeLocator />
-          <TopologySuggestions />
-          <TimeSlider />
-          <PortfolioPanel onPortfolioNodes={handlePortfolioNodes} />
+          {isExpert && <TopologySuggestions />}
+          {isExpert && <TimeSlider />}
+          {isExpert && <PortfolioPanel onPortfolioNodes={handlePortfolioNodes} />}
         </div>
       </main>
     </ErrorBoundary>
