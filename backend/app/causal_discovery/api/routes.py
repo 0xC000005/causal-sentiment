@@ -86,12 +86,19 @@ _discovery_status: dict[str, Any] = {
     "error": None,
 }
 
-# Default anchors for polarity propagation
+# Default anchors for polarity propagation (from equity perspective).
+# More anchors = better polarity coverage across different graph structures.
+# Each anchor defines: "up" = positive (+1) or negative (-1) for equities.
 _DEFAULT_ANCHORS: dict[str, int] = {
-    "sp500": +1,
-    "nasdaq": +1,
-    "us_gdp_growth": +1,
-    "unemployment_rate": -1,
+    "sp500": +1,           # Equities up = positive
+    "nasdaq": +1,          # Tech up = positive
+    "russell2000": +1,     # Small caps up = risk-on
+    "us_gdp_growth": +1,   # GDP up = positive
+    "unemployment_rate": -1,  # Unemployment up = negative
+    "dxy_index": -1,       # Strong dollar = bearish for commodities/EM
+    "us_10y_yield": -1,    # Higher rates = bearish for equities
+    "vix": -1,             # Fear up = negative
+    "wti_crude": -1,       # Oil up = inflationary = bearish
 }
 
 
@@ -181,12 +188,9 @@ async def _run_discovery_task(
             p = polarity.get(node_id, 0)
             imp = importance_map.get(node_id, {})
             # Display sentiment: polarity × normalized z-score
-            # Bidirectional anchor propagation should reach all connected nodes.
-            # Fallback to raw z-score for any still-unreachable nodes (disconnected components)
-            if p != 0:
-                display = p * min(abs(z) / 3.0, 1.0)
-            else:
-                display = z / 3.0  # Disconnected from all anchors — use z-score directly
+            # 9 anchors + bidirectional propagation covers all connected nodes.
+            # Nodes with polarity=0 are truly disconnected from all anchors.
+            display = p * min(abs(z) / 3.0, 1.0)
             nodes_json.append({
                 "id": node_id,
                 "zscore": round(z, 4),
