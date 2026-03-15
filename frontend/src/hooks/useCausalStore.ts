@@ -11,6 +11,7 @@ import type {
 } from "@/types/graph";
 
 import { API_URL } from "@/lib/config";
+import { getNodeLabel } from "@/lib/nodeLabels";
 
 interface DiscoveryStatus {
   state: "idle" | "running" | "completed" | "failed";
@@ -42,7 +43,7 @@ interface CausalStore {
 function transformCausalNode(node: CausalNode): ForceGraphNode {
   return {
     id: node.id,
-    label: node.id,
+    label: getNodeLabel(node.id),
     nodeType: "discovered",
     sentiment: node.display_sentiment,
     confidence: node.importance,
