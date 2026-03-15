@@ -188,14 +188,24 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
           return sentimentToColor(node.sentiment ?? 0);
         }}
         nodeVal={(node: any) => {
+          if (isDiscovered) {
+            // Rank-based sizing: guaranteed visual hierarchy
+            // Sort all nodes by centrality, map rank to size range [2, 25]
+            const sorted = [...nodes].sort((a, b) => (a.centrality ?? 0) - (b.centrality ?? 0));
+            const rank = sorted.findIndex((n) => n.id === node.id);
+            const total = sorted.length || 1;
+            const MIN_SIZE = 2;
+            const MAX_SIZE = 25;
+            return MIN_SIZE + (rank / total) * (MAX_SIZE - MIN_SIZE);
+          }
           const base = Math.max(2, (node.centrality ?? 0.02) * 100);
           if (simImpactMap) {
-            if (simulation?.source_node === node.id) return base * 2; // Source node is large
+            if (simulation?.source_node === node.id) return base * 2;
             if (simImpactMap.has(node.id)) {
               const absImpact = Math.abs(simImpactMap.get(node.id)!);
-              return base * (1 + absImpact * 2); // Scale by impact magnitude
+              return base * (1 + absImpact * 2);
             }
-            return base * 0.5; // Shrink unaffected
+            return base * 0.5;
           }
           return anomalyNodeIds.has(node.id) ? base * 1.5 : base;
         }}
@@ -210,8 +220,8 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
             return "#1f2937";
           }
           if (isDiscovered) {
-            // Neutral grey edges — node colors tell the sentiment story
-            return link.direction === "negative" ? "rgba(120,120,120,0.3)" : "rgba(160,160,160,0.5)";
+            // Neutral edges — positive = light blue-grey, negative = dim orange-grey
+            return link.direction === "negative" ? "#8b6040" : "#7090a8";
           }
           return edgeDirectionColor(link.direction);
         }}
@@ -241,7 +251,7 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
         linkDirectionalParticleWidth={(link: any) =>
           isDiscovered ? Math.max(0.3, (link.weight ?? 0.5) * 1.5) : Math.max(0.5, (link.weight ?? 0.5) * 2)
         }
-        linkDirectionalParticleColor={isDiscovered ? (() => "rgba(200,200,200,0.6)") : undefined}
+        linkDirectionalParticleColor={isDiscovered ? ((link: any) => link.direction === "negative" ? "#c0885a" : "#90b8d0") : undefined}
         linkDirectionalParticleSpeed={(link: any) => {
           if (simAffectedEdges) {
             const src = typeof link.source === "string" ? link.source : link.source?.id;
