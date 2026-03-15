@@ -105,9 +105,11 @@ export const useCausalStore = create<CausalStore>((set, get) => ({
   triggerDiscovery: async (algorithm: string, scoring: string) => {
     set({ discovering: true, error: null });
     try {
+      const runName = `${algorithm}_${scoring}`;
       const params = new URLSearchParams({
         algorithm,
         scoring,
+        run_name: runName,
       });
       const res = await fetch(`${API_URL}/api/causal/discover?${params.toString()}`, {
         method: "POST",

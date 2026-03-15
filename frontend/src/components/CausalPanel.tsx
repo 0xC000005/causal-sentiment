@@ -310,15 +310,14 @@ export default function CausalPanel() {
                       >
                         <div className="flex justify-between items-center">
                           <span className="font-medium truncate">
-                            {s.run_name}
+                            {s.algorithm}_{String((s.parameters as Record<string, unknown>)?.scoring ?? "zscore")}
                           </span>
                           <span className="text-[9px] text-gray-500 ml-1 flex-shrink-0">
-                            {s.node_count}n/{s.edge_count}e
+                            {s.node_count}n · {s.edge_count}e
                           </span>
                         </div>
                         <div className="text-[9px] text-gray-500">
-                          {s.algorithm} ·{" "}
-                          {new Date(s.created_at).toLocaleDateString()}
+                          {new Date(s.created_at).toLocaleString()}
                         </div>
                       </button>
                     ))}
