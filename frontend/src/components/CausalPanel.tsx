@@ -308,14 +308,20 @@ export default function CausalPanel() {
 
               {/* Explanation */}
               {currentGraph && (
-                <div className="mb-3 bg-gray-800/50 rounded p-2 text-[10px] text-gray-400 space-y-1.5">
-                  <div className="text-[10px] text-gray-500 uppercase font-semibold">How to read this graph</div>
+                <div className="mb-3 bg-gray-800/50 rounded p-2 text-[10px] text-gray-400 space-y-2">
+                  <div className="text-[10px] text-gray-500 uppercase font-semibold">What this graph shows</div>
+                  <div className="text-[10px] text-purple-300/80 italic">
+                    This network is discovered from data, not drawn by an expert. Edges represent statistically significant predictive relationships that survive rigorous controls — not just correlations. The structure often differs from expert assumptions, revealing unexpected leading indicators and hidden connections.
+                  </div>
                   <div>{ALGORITHM_EXPLANATIONS[currentGraph.algorithm] || "Causal edges discovered from historical data."}</div>
                   <div>{SCORING_EXPLANATIONS[currentGraph.parameters?.scoring] || ""}</div>
                   <div>
                     <span className="text-green-400">Green</span> = above average (positive polarity) ·
                     <span className="text-red-400"> Red</span> = below average or negative polarity ·
                     Node size = importance (centrality in the discovered network)
+                  </div>
+                  <div className="text-[9px] text-gray-500 border-t border-gray-700 pt-1.5 mt-1">
+                    <span className="font-semibold text-gray-400">Expert vs. Data:</span> The expert graph has 117 hand-drawn edges based on macro theory. This discovered graph found {currentGraph.summary.edge_count} edges from {currentGraph.parameters?.days || 252} days of historical data. Overlap is typically low (~6%) — experts and data disagree on most connections. Both perspectives are valuable: theory tells you <em>why</em>, data tells you <em>what actually predicts what</em>.
                   </div>
                 </div>
               )}
