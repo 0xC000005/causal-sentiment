@@ -61,7 +61,11 @@ export default function CausalPanel() {
       if (source === "expert") {
         fetchExpertGraph();
       } else if (source === "discovered" && !currentGraph && snapshots.length > 0) {
-        loadGraph(snapshots[0].id);
+        // Default to pcmci_zscore, or the first matching snapshot for current algorithm+scoring
+        const defaultMatch = snapshots.find((s) => s.run_name === `${algorithm}_${scoring}`)
+          || snapshots.find((s) => s.run_name === "pcmci_zscore")
+          || snapshots[0];
+        loadGraph(defaultMatch.id);
       }
     },
     [setGraphSource, fetchExpertGraph, currentGraph, snapshots, loadGraph],
