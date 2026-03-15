@@ -6,7 +6,7 @@ import { useGraphStore } from "@/hooks/useGraphData";
 
 export default function CausalPanel() {
   const [collapsed, setCollapsed] = useState(true);
-  const [algorithm, setAlgorithm] = useState("pcmci+");
+  const [algorithm, setAlgorithm] = useState("pcmci");
   const [scoring, setScoring] = useState("zscore");
   const [sliderValue, setSliderValue] = useState(20);
   const [useTopN, setUseTopN] = useState(false);
@@ -84,6 +84,18 @@ export default function CausalPanel() {
     }
   }, [useTopN, sliderValue, setTopN]);
 
+  // Auto-load matching snapshot when algorithm or scoring changes in discovered mode
+  useEffect(() => {
+    if (graphSource !== "discovered") return;
+    const runName = `${algorithm}_${scoring}`;
+    const match = snapshots.find((s) => s.run_name === runName);
+    if (match) {
+      loadGraph(match.id);
+    } else {
+      useCausalStore.setState({ currentGraph: null });
+    }
+  }, [algorithm, scoring, graphSource, snapshots, loadGraph]);
+
   const handleRunDiscovery = useCallback(async () => {
     await triggerDiscovery(algorithm, scoring);
   }, [triggerDiscovery, algorithm, scoring]);
@@ -139,7 +151,7 @@ export default function CausalPanel() {
                   onChange={(e) => setAlgorithm(e.target.value)}
                   className="w-full bg-gray-800 border border-gray-600 text-gray-200 text-xs rounded px-2 py-1.5 focus:outline-none focus:border-gray-500"
                 >
-                  <option value="pcmci+">PCMCI+</option>
+                  <option value="pcmci">PCMCI+</option>
                   <option value="granger">Granger</option>
                 </select>
               </div>
