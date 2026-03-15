@@ -125,24 +125,33 @@ async def _run_discovery_task(
 
         zscores = compute_rolling_zscore(df, window=zscore_window)
 
-        # Run the selected algorithm
+        # Run the selected algorithm in a thread pool to avoid blocking the event loop.
+        # All causal discovery algorithms are CPU-bound (numpy matrix ops) and would
+        # block async endpoints (health, status, WebSocket) if run in the main thread.
+        import asyncio
+
         if algorithm == "varlingam":
             from app.causal_discovery.engine.causal import discover_edges_varlingam
-            edges = discover_edges_varlingam(zscores, max_lag=max_lag)
+            edges = await asyncio.to_thread(discover_edges_varlingam, zscores, max_lag)
         elif algorithm == "pc":
             from app.causal_discovery.engine.causal import discover_edges_pc
-            result = discover_edges_pc(zscores, significance_level=significance_level, return_steps=True)
+            result = await asyncio.to_thread(
+                discover_edges_pc, zscores, significance_level, True,
+            )
             edges = result["final"]
-            # Store steps in metadata for animated playback
             extra_metadata = {"steps": result["steps"]}
         elif algorithm == "ges":
             from app.causal_discovery.engine.causal import discover_edges_ges
-            edges = discover_edges_ges(zscores)
+            edges = await asyncio.to_thread(discover_edges_ges, zscores)
         elif algorithm == "granger":
             from app.causal_discovery.engine.causal import discover_edges_granger
-            edges = discover_edges_granger(zscores, max_lag=max_lag, significance_level=significance_level)
+            edges = await asyncio.to_thread(
+                discover_edges_granger, zscores, max_lag, significance_level,
+            )
         else:
-            edges = discover_edges_pcmci(zscores, max_lag=max_lag, significance_level=significance_level)
+            edges = await asyncio.to_thread(
+                discover_edges_pcmci, zscores, max_lag, significance_level,
+            )
 
         extra_metadata = locals().get("extra_metadata", {})
 
