@@ -1,7 +1,10 @@
-"""Causal discovery algorithms — PCMCI+ (tigramite) and VARLiNGAM (lingam).
+"""Causal discovery algorithms.
 
-Both functions use lazy imports so the module can be imported even when
-tigramite or lingam are not installed.
+Supported: PCMCI+ (tigramite), VARLiNGAM (lingam), PC (causal-learn),
+GES (causal-learn), Granger causality network (statsmodels).
+
+All functions use lazy imports so the module can be imported even when
+optional packages are not installed.
 """
 from __future__ import annotations
 
@@ -143,4 +146,216 @@ def discover_edges_varlingam(
                     })
 
     logger.info("VARLiNGAM discovered %d edges from %d variables", len(edges), n_vars)
+    return edges
+
+
+def discover_edges_pc(
+    df: pd.DataFrame,
+    significance_level: float = 0.01,
+    return_steps: bool = False,
+) -> list[dict[str, Any]] | dict[str, Any]:
+    """Run PC algorithm (constraint-based, iterative edge elimination).
+
+    Starts with a complete graph and removes edges that fail conditional
+    independence tests. When return_steps=True, returns intermediate graphs
+    at each conditioning set size — useful for animated visualization.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Aligned daily matrix (index=date, columns=node_id).
+    significance_level : float
+        P-value threshold for independence tests.
+    return_steps : bool
+        If True, returns {"final": edges, "steps": [edges_at_step_0, edges_at_step_1, ...]}
+        where each step shows the graph after removing edges at that conditioning depth.
+
+    Returns
+    -------
+    list[dict] or dict
+        Edge list, or dict with "final" and "steps" if return_steps=True.
+    """
+    from causallearn.search.ConstraintBased.PC import pc
+    from causallearn.utils.cit import fisherz
+
+    columns = list(df.columns)
+    data = df.values.astype(np.float64)
+    n_vars = len(columns)
+
+    if return_steps:
+        # Run PC at increasing max conditioning set sizes to capture steps
+        steps = []
+        # Step 0: complete graph (all possible edges)
+        all_edges = []
+        for i in range(n_vars):
+            for j in range(i + 1, n_vars):
+                all_edges.append({
+                    "source": columns[i], "target": columns[j],
+                    "weight": 1.0, "lag": 0, "direction": "positive",
+                })
+        steps.append({"depth": -1, "label": "complete_graph", "edges": all_edges})
+
+        for max_depth in range(0, min(n_vars - 1, 6)):
+            try:
+                cg = pc(data, alpha=significance_level, indep_test=fisherz,
+                        depth=max_depth, verbose=False, show_progress=False)
+                adj = cg.G.graph
+                step_edges = _extract_pc_edges(adj, columns)
+                steps.append({
+                    "depth": max_depth,
+                    "label": f"depth_{max_depth}",
+                    "edges": step_edges,
+                })
+            except Exception as e:
+                logger.warning("PC step depth=%d failed: %s", max_depth, e)
+                break
+
+        final_edges = steps[-1]["edges"] if steps else []
+        logger.info("PC discovered %d edges from %d variables (%d steps)",
+                     len(final_edges), n_vars, len(steps))
+        return {"final": final_edges, "steps": steps}
+    else:
+        cg = pc(data, alpha=significance_level, indep_test=fisherz,
+                verbose=False, show_progress=False)
+        adj = cg.G.graph
+        edges = _extract_pc_edges(adj, columns)
+        logger.info("PC discovered %d edges from %d variables", len(edges), n_vars)
+        return edges
+
+
+def _extract_pc_edges(adj_matrix: np.ndarray, columns: list[str]) -> list[dict[str, Any]]:
+    """Extract edges from causal-learn's adjacency matrix.
+
+    causal-learn uses: adj[i,j] = -1 and adj[j,i] = 1 means i → j
+                       adj[i,j] = -1 and adj[j,i] = -1 means i — j (undirected)
+    """
+    n = len(columns)
+    edges = []
+    seen = set()
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                continue
+            key = (min(i, j), max(i, j))
+            if key in seen:
+                continue
+
+            if adj_matrix[i, j] != 0 and adj_matrix[j, i] != 0:
+                seen.add(key)
+                # Determine direction
+                if adj_matrix[i, j] == -1 and adj_matrix[j, i] == 1:
+                    src, tgt = columns[i], columns[j]
+                elif adj_matrix[j, i] == -1 and adj_matrix[i, j] == 1:
+                    src, tgt = columns[j], columns[i]
+                else:
+                    # Undirected — pick alphabetical order
+                    src, tgt = sorted([columns[i], columns[j]])
+
+                edges.append({
+                    "source": src, "target": tgt,
+                    "weight": 1.0,  # PC doesn't output weights
+                    "lag": 0,
+                    "direction": "positive",  # PC doesn't output sign
+                })
+    return edges
+
+
+def discover_edges_ges(
+    df: pd.DataFrame,
+    score_func: str = "local_score_BIC",
+) -> list[dict[str, Any]]:
+    """Run GES (Greedy Equivalence Search) — score-based structure learning.
+
+    GES searches over DAG equivalence classes by greedily adding then removing
+    edges to optimize BIC score. Different philosophy from constraint-based PC.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Aligned daily matrix.
+    score_func : str
+        Scoring function: 'local_score_BIC' or 'local_score_BDeu'.
+
+    Returns
+    -------
+    list[dict]
+        Edge list with source, target, weight, lag, direction.
+    """
+    from causallearn.search.ScoreBased.GES import ges
+
+    columns = list(df.columns)
+    data = df.values.astype(np.float64)
+
+    result = ges(data, score_func=score_func)
+    adj = result["G"].graph
+
+    edges = _extract_pc_edges(adj, columns)  # Same adjacency format as PC
+    logger.info("GES discovered %d edges from %d variables", len(edges), len(columns))
+    return edges
+
+
+def discover_edges_granger(
+    df: pd.DataFrame,
+    max_lag: int = 5,
+    significance_level: float = 0.01,
+) -> list[dict[str, Any]]:
+    """Build a Granger causality network via pairwise VAR Granger tests.
+
+    Tests every pair (A, B): does past A help predict B beyond B's own past?
+    Simple baseline — doesn't control for confounders like PCMCI+ does.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Aligned daily matrix.
+    max_lag : int
+        Maximum lag for Granger test.
+    significance_level : float
+        P-value threshold.
+
+    Returns
+    -------
+    list[dict]
+        Edge list with source, target, weight (1 - p_value), lag, direction.
+    """
+    from statsmodels.tsa.stattools import grangercausalitytests
+
+    columns = list(df.columns)
+    n_vars = len(columns)
+    edges: list[dict[str, Any]] = []
+
+    for i in range(n_vars):
+        for j in range(n_vars):
+            if i == j:
+                continue
+            try:
+                # Test: does column[i] Granger-cause column[j]?
+                pair_data = df[[columns[j], columns[i]]].dropna()
+                if len(pair_data) < max_lag + 10:
+                    continue
+                result = grangercausalitytests(pair_data.values, maxlag=max_lag, verbose=False)
+
+                # Find the best (most significant) lag
+                best_p = 1.0
+                best_lag = 1
+                for lag in range(1, max_lag + 1):
+                    p_val = result[lag][0]["ssr_ftest"][1]  # F-test p-value
+                    if p_val < best_p:
+                        best_p = p_val
+                        best_lag = lag
+
+                if best_p < significance_level:
+                    # Determine direction from correlation sign
+                    corr = df[columns[i]].corr(df[columns[j]])
+                    edges.append({
+                        "source": columns[i],
+                        "target": columns[j],
+                        "weight": round(1.0 - best_p, 4),  # Higher = more significant
+                        "lag": best_lag,
+                        "direction": "positive" if corr > 0 else "negative",
+                    })
+            except Exception:
+                continue  # Skip pairs that fail (singular matrices, etc.)
+
+    logger.info("Granger network: %d edges from %d variables", len(edges), n_vars)
     return edges

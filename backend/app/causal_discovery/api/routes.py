@@ -129,8 +129,22 @@ async def _run_discovery_task(
         if algorithm == "varlingam":
             from app.causal_discovery.engine.causal import discover_edges_varlingam
             edges = discover_edges_varlingam(zscores, max_lag=max_lag)
+        elif algorithm == "pc":
+            from app.causal_discovery.engine.causal import discover_edges_pc
+            result = discover_edges_pc(zscores, significance_level=significance_level, return_steps=True)
+            edges = result["final"]
+            # Store steps in metadata for animated playback
+            extra_metadata = {"steps": result["steps"]}
+        elif algorithm == "ges":
+            from app.causal_discovery.engine.causal import discover_edges_ges
+            edges = discover_edges_ges(zscores)
+        elif algorithm == "granger":
+            from app.causal_discovery.engine.causal import discover_edges_granger
+            edges = discover_edges_granger(zscores, max_lag=max_lag, significance_level=significance_level)
         else:
             edges = discover_edges_pcmci(zscores, max_lag=max_lag, significance_level=significance_level)
+
+        extra_metadata = locals().get("extra_metadata", {})
 
         # Build graph for polarity + importance
         g = _build_graph_from_edges(edges)
@@ -187,6 +201,7 @@ async def _run_discovery_task(
                 },
                 nodes=nodes_json,
                 edges=edges_json,
+                metadata_=extra_metadata,
             )
             session.add(snapshot)
             await session.commit()
