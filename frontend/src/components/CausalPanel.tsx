@@ -96,9 +96,17 @@ export default function CausalPanel() {
     }
   }, [algorithm, scoring, graphSource, snapshots, loadGraph]);
 
+  const matchingRunName = `${algorithm}_${scoring}`;
+  const hasExistingSnapshot = snapshots.some((s) => s.run_name === matchingRunName);
+
   const handleRunDiscovery = useCallback(async () => {
-    await triggerDiscovery(algorithm, scoring);
-  }, [triggerDiscovery, algorithm, scoring]);
+    const existing = snapshots.find((s) => s.run_name === matchingRunName);
+    if (existing) {
+      await loadGraph(existing.id);
+    } else {
+      await triggerDiscovery(algorithm, scoring);
+    }
+  }, [snapshots, matchingRunName, loadGraph, triggerDiscovery, algorithm, scoring]);
 
   const handleReloadWithTopN = useCallback(() => {
     if (currentGraph) {
@@ -178,7 +186,7 @@ export default function CausalPanel() {
                 disabled={discovering}
                 className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-xs py-2 px-3 rounded transition-colors mb-3"
               >
-                {discovering ? "Discovering..." : "Run Discovery"}
+                {discovering ? "Discovering..." : hasExistingSnapshot ? "Load Result" : "Run Discovery"}
               </button>
 
               {discovering && (
