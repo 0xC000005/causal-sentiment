@@ -527,6 +527,72 @@ async def get_graph_animate(
     }
 
 
+@router.get("/graph/compare")
+async def get_graph_compare(
+    id: int | None = None,
+    run_name: str | None = None,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Compare a discovered graph against the expert graph from topology.py.
+
+    Returns overlap metrics: shared edges, expert-only edges, discovered-only
+    edges, Jaccard similarity, and the lists of shared and novel edges.
+    """
+    from app.causal_discovery.models import DiscoveredGraph
+    from app.graph_engine.topology import MVP_NODES, MVP_EDGES
+    from sqlalchemy import select
+
+    # --- load discovered graph ---
+    if id is not None:
+        query = select(DiscoveredGraph).where(DiscoveredGraph.id == id)
+    elif run_name is not None:
+        query = (select(DiscoveredGraph)
+                 .where(DiscoveredGraph.run_name == run_name)
+                 .order_by(DiscoveredGraph.created_at.desc())
+                 .limit(1))
+    else:
+        query = select(DiscoveredGraph).order_by(DiscoveredGraph.created_at.desc()).limit(1)
+
+    result = await session.execute(query)
+    graph = result.scalar_one_or_none()
+    if graph is None:
+        raise HTTPException(status_code=404, detail="No discovered graph found.")
+
+    # Expert edges as (source, target) pairs
+    expert_edge_set = {(e["source_id"], e["target_id"]) for e in MVP_EDGES}
+    expert_node_set = {n["id"] for n in MVP_NODES}
+
+    # Discovered edges as (source, target) pairs
+    discovered_edge_set = {(e["source"], e["target"]) for e in graph.edges}
+    discovered_node_set = {n["id"] for n in graph.nodes}
+
+    shared_edges = expert_edge_set & discovered_edge_set
+    expert_only = expert_edge_set - discovered_edge_set
+    discovered_only = discovered_edge_set - expert_edge_set
+
+    union_size = len(expert_edge_set | discovered_edge_set)
+    jaccard = len(shared_edges) / union_size if union_size > 0 else 0.0
+
+    return {
+        "expert": {
+            "node_count": len(expert_node_set),
+            "edge_count": len(expert_edge_set),
+        },
+        "discovered": {
+            "node_count": len(discovered_node_set),
+            "edge_count": len(discovered_edge_set),
+        },
+        "shared_edge_count": len(shared_edges),
+        "expert_only_edge_count": len(expert_only),
+        "discovered_only_edge_count": len(discovered_only),
+        "jaccard_similarity": round(jaccard, 4),
+        "shared_edges": sorted([{"source": s, "target": t} for s, t in shared_edges],
+                                key=lambda e: (e["source"], e["target"])),
+        "novel_edges": sorted([{"source": s, "target": t} for s, t in discovered_only],
+                               key=lambda e: (e["source"], e["target"])),
+    }
+
+
 @router.get("/graph")
 async def get_graph(
     id: int | None = None,
