@@ -14,7 +14,7 @@ from app.causal_discovery.engine.anchors import propagate_polarity
 from app.causal_discovery.engine.causal import discover_edges_pcmci
 from app.causal_discovery.engine.importance import rank_nodes_by_importance
 from app.causal_discovery.engine.matrix import get_daily_matrix
-from app.causal_discovery.engine.zscore import compute_rolling_zscore
+from app.causal_discovery.engine.scoring import compute_rolling_zscore
 from app.causal_discovery.pipeline.backfill import run_backfill
 from app.causal_discovery.pipeline.sources import get_all_sources
 from app.db.connection import get_session
@@ -98,12 +98,13 @@ _DEFAULT_ANCHORS: dict[str, int] = {
 async def _run_discovery_task(
     run_name: str = "default",
     algorithm: str = "pcmci",
+    scoring: str = "zscore",
     max_lag: int = 5,
     significance_level: float = 0.01,
     days: int = 252,
     zscore_window: int = 90,
 ) -> None:
-    """Background task: daily matrix -> z-scores -> causal discovery -> persist to DB."""
+    """Background task: daily matrix -> scoring -> causal discovery -> persist to DB."""
     from app.db.connection import async_session
     from app.causal_discovery.models import DiscoveredGraph
 
@@ -123,7 +124,15 @@ async def _run_discovery_task(
                 f"{len(df.columns)} columns"
             )
 
-        zscores = compute_rolling_zscore(df, window=zscore_window)
+        from app.causal_discovery.engine.scoring import compute_scores
+        if scoring == "zscore":
+            zscores = compute_scores(df, method="zscore", window=zscore_window)
+        elif scoring == "returns":
+            zscores = compute_scores(df, method="returns")
+        elif scoring == "volatility":
+            zscores = compute_scores(df, method="volatility", window=20)
+        else:
+            zscores = compute_scores(df, method=scoring)
 
         # Run the selected algorithm in a thread pool to avoid blocking the event loop.
         # All causal discovery algorithms are CPU-bound (numpy matrix ops) and would
@@ -203,6 +212,7 @@ async def _run_discovery_task(
                 node_count=len(nodes_json),
                 edge_count=len(edges_json),
                 parameters={
+                    "scoring": scoring,
                     "max_lag": max_lag,
                     "significance_level": significance_level,
                     "days": days,
@@ -320,6 +330,7 @@ async def trigger_discovery(
     background_tasks: BackgroundTasks,
     run_name: str = "default",
     algorithm: str = "pcmci",
+    scoring: str = "zscore",
     max_lag: int = 5,
     significance_level: float = 0.01,
     days: int = 252,
@@ -329,11 +340,12 @@ async def trigger_discovery(
 
     Parameters:
         run_name: Label for this series of snapshots (e.g. 'weekly_full')
-        algorithm: 'pcmci' or 'varlingam'
+        algorithm: 'pcmci', 'granger', 'pc', 'ges', 'varlingam'
+        scoring: 'zscore', 'returns', 'volatility' — how to transform raw data before discovery
         max_lag: Maximum causal lag in days
         significance_level: p-value threshold (pcmci only)
         days: How many days of history to use
-        zscore_window: Rolling z-score window size
+        zscore_window: Rolling z-score window size (zscore scoring only)
 
     Returns immediately. Poll ``GET /api/causal/discover/status`` for progress.
     """
@@ -344,6 +356,7 @@ async def trigger_discovery(
         _run_discovery_task,
         run_name=run_name,
         algorithm=algorithm,
+        scoring=scoring,
         max_lag=max_lag,
         significance_level=significance_level,
         days=days,
