@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Graph3D from "@/components/Graph3D";
 import NodePanel from "@/components/NodePanel";
+import CausalNodePanel from "@/components/CausalNodePanel";
 import FilterBar from "@/components/FilterBar";
 import SentimentTimeline from "@/components/SentimentTimeline";
 import AgentRunLog from "@/components/AgentRunLog";
@@ -52,7 +53,7 @@ export default function Home() {
         <Graph3D portfolioNodeIds={portfolioNodeIds} />
         {isExpert && <FilterBar />}
         <CausalPanel />
-        {isExpert && <NodePanel />}
+        {isExpert ? <NodePanel /> : <CausalNodePanel />}
         <UserGuide />
         {isExpert && <SimulationPanel />}
         {isExpert && <SentimentTimeline />}
