@@ -86,20 +86,45 @@ _discovery_status: dict[str, Any] = {
     "error": None,
 }
 
-# Default anchors for polarity propagation (from equity perspective).
-# More anchors = better polarity coverage across different graph structures.
-# Each anchor defines: "up" = positive (+1) or negative (-1) for equities.
-_DEFAULT_ANCHORS: dict[str, int] = {
-    "sp500": +1,           # Equities up = positive
-    "nasdaq": +1,          # Tech up = positive
-    "russell2000": +1,     # Small caps up = risk-on
-    "us_gdp_growth": +1,   # GDP up = positive
-    "unemployment_rate": -1,  # Unemployment up = negative
-    "dxy_index": -1,       # Strong dollar = bearish for commodities/EM
-    "us_10y_yield": -1,    # Higher rates = bearish for equities
-    "vix": -1,             # Fear up = negative
-    "wti_crude": -1,       # Oil up = inflationary = bearish
+# Per-scoring anchor sets. Polarity meaning changes by scoring method:
+# - zscore/returns: "up" means price/value above average or rising
+# - volatility: "up" means getting more volatile (choppier)
+_ANCHORS_BY_SCORING: dict[str, dict[str, int]] = {
+    "zscore": {
+        "sp500": +1,           # Price above average = positive
+        "nasdaq": +1,
+        "russell2000": +1,
+        "us_gdp_growth": +1,
+        "unemployment_rate": -1,  # Unemployment above average = negative
+        "dxy_index": -1,       # Strong dollar = bearish for commodities/EM
+        "us_10y_yield": -1,    # Rates above average = bearish
+        "vix": -1,             # Fear above average = negative
+        "wti_crude": -1,       # Oil above average = inflationary
+    },
+    "returns": {
+        "sp500": +1,           # Price going up = positive
+        "nasdaq": +1,
+        "russell2000": +1,
+        "us_gdp_growth": +1,
+        "unemployment_rate": -1,  # Unemployment rising = negative
+        "dxy_index": -1,       # Dollar strengthening = bearish
+        "us_10y_yield": -1,    # Rates rising = bearish
+        "vix": -1,             # VIX rising = fear increasing
+        "wti_crude": -1,       # Oil rising = inflationary
+    },
+    "volatility": {
+        "sp500": -1,           # Equities getting volatile = negative (instability)
+        "nasdaq": -1,
+        "russell2000": -1,
+        "vix": -1,             # VIX volatile = extreme fear swings = negative
+        "us_10y_yield": -1,    # Rate volatility = uncertainty = negative
+        "gold": +1,            # Gold volatile = flight-to-safety active = positive signal
+        "dxy_index": -1,       # Dollar volatile = currency instability
+        "hy_credit_spread": -1,  # Credit spread volatile = stress
+        "wti_crude": -1,       # Oil volatile = supply uncertainty
+    },
 }
+_DEFAULT_ANCHORS = _ANCHORS_BY_SCORING["zscore"]  # fallback
 
 
 async def _run_discovery_task(
@@ -173,7 +198,8 @@ async def _run_discovery_task(
 
         # Build graph for polarity + importance
         g = _build_graph_from_edges(edges)
-        polarity = propagate_polarity(g, _DEFAULT_ANCHORS)
+        anchors = _ANCHORS_BY_SCORING.get(scoring, _DEFAULT_ANCHORS)
+        polarity = propagate_polarity(g, anchors)
         ranking = rank_nodes_by_importance(g, top_n=100)
         importance_map = {r["node_id"]: r for r in ranking}
 
