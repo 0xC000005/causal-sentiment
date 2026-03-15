@@ -7,7 +7,7 @@ A data-driven alternative to the main sentiment analysis. Instead of hand-crafti
 | Aspect | Main system (sentiment analysis) | This module (causal discovery) |
 |--------|----------------------------------|-------------------------------|
 | Nodes | 52 hand-picked in `topology.py` | All available from yfinance/FRED, filtered by importance |
-| Edges | 117 hand-drawn with expert weights | Discovered by PCMCI/VARLiNGAM from data |
+| Edges | 117 hand-drawn with expert weights | Discovered by PCMCI+/Granger/PC/GES from data |
 | Edge weights | Expert-defined base + Pearson dynamic | Fully learned from causal discovery algorithms |
 | Edge direction | Expert-defined (positive/negative) | Learned from data |
 | Node scores | LLM API call per node (~$0.04 each, ~30s) | Z-score computation (free, instant) |
@@ -30,10 +30,13 @@ Aligned daily matrix (time_bucket + last)
         |           v
         |     Display scores: z_score x polarity -> [-1, +1]
         |
-        +---> Causal discovery (PCMCI / VARLiNGAM)
+        +---> Causal discovery (PCMCI+ / Granger / PC / GES)
         |           |
         |           v
         |     Discovered edges with direction + weight
+        |           |
+        |           v
+        |     Persist to discovered_graphs table (survives restarts)
         |
         +---> Node importance (centrality, variance)
                     |
@@ -146,18 +149,19 @@ Why not LLM sentiment:
 
 Feed the z-score time-series matrix into causal discovery algorithms.
 
-**Primary algorithms:**
+**Implemented algorithms (all callable via `POST /api/causal/discover?algorithm=X`):**
 
-| Algorithm | Library | What it discovers | Why |
-|-----------|---------|------------------|-----|
-| PCMCI+ | `tigramite` | Lagged + contemporaneous causal edges | Purpose-built for time-series; handles autocorrelation |
-| VARLiNGAM | `lingam` | Causal ordering + directed edges | Exploits non-Gaussianity of financial returns (fat tails are a feature) |
-| DynamicsBlockState | `graph-tool` | Graph structure from dynamics + posterior edge probabilities | Bayesian inference; MDL prevents overfitting; also discovers hierarchical communities |
+| Algorithm | Library | Edges on 35 nodes | Time | Status |
+|-----------|---------|-------------------|------|--------|
+| PCMCI+ (`pcmci`) | `tigramite` | 62 | ~3s | Primary — controls for confounders, best for time-series |
+| Granger (`granger`) | `statsmodels` | 140 | ~5s | Baseline — pairwise tests, no confounder control (more spurious edges) |
+| PC (`pc`) | `causal-learn` | ? | >10min | Iterative elimination with step output for animated demo. Too slow at 35 nodes — needs acceleration |
+| GES (`ges`) | `causal-learn` | — | fails | Singular matrix from correlated financial data |
+| VARLiNGAM (`varlingam`) | `lingam` | — | fails | Same multicollinearity issue as GES |
 
-**Alternative algorithms** (evaluated but not primary — see research log for details):
-- **NOTEARS/GOLEM** (`gCastle`) — score-based continuous optimization, scales well but assumes i.i.d. data
-- **PC/FCI** (`causal-learn`) — constraint-based iterative edge elimination; FCI handles latent confounders
-- **DoWhy** — not for discovery but for validation (`arrow_strength()`, `refute_causal_structure()`)
+**Not yet implemented:**
+- **graph-tool DynamicsBlockState** — Bayesian network reconstruction (requires conda, deferred)
+- **DoWhy** — edge validation, not discovery (`arrow_strength()`, `refute_causal_structure()`)
 
 **Output:** Adjacency matrix with edge weights and directions (positive/negative).
 
@@ -248,10 +252,12 @@ backend/app/causal_discovery/
 |
 |-- models.py                  <-- NodeValue SQLAlchemy model + hypertable setup
 |
+|-- models.py                  <-- NodeValue + DiscoveredGraph SQLAlchemy models
+|
 |-- pipeline/
 |   |-- __init__.py
-|   |-- sources.py             <-- Ticker/series registry (what to fetch, node_id mappings)
-|   |-- fetchers.py            <-- yfinance + FRED bulk fetch with rate-limit handling
+|   |-- sources.py             <-- Ticker/series registry (20 yfinance + 15 FRED)
+|   |-- fetchers.py            <-- yfinance + FRED fetch with rate-limit handling + Yahoo direct fallback
 |   |-- backfill.py            <-- One-time historical backfill job (5 years)
 |   |-- scheduler.py           <-- Incremental daily update jobs (planned)
 |
@@ -259,7 +265,7 @@ backend/app/causal_discovery/
 |   |-- __init__.py
 |   |-- matrix.py              <-- Build aligned daily matrix from node_values
 |   |-- zscore.py              <-- Rolling z-score computation per node
-|   |-- causal.py              <-- PCMCI/VARLiNGAM wrapper -> edges + directions
+|   |-- causal.py              <-- PCMCI+, Granger, PC, GES, VARLiNGAM wrappers
 |   |-- importance.py          <-- Node filtering (centrality, variance)
 |   |-- anchors.py             <-- Anchor propagation for display polarity
 |
@@ -278,9 +284,11 @@ frontend/src/components/causal-discovery/   (planned — not yet implemented)
 |--------|------|-------------|--------|
 | POST | `/api/causal/backfill` | Trigger historical data backfill (background) | Implemented |
 | GET | `/api/causal/backfill/status` | Check backfill progress | Implemented |
-| POST | `/api/causal/discover` | Run causal discovery on stored data (background) | Implemented |
+| POST | `/api/causal/discover?algorithm=X&run_name=Y` | Run causal discovery (pcmci/granger/pc/ges/varlingam) | Implemented |
 | GET | `/api/causal/discover/status` | Check discovery progress | Implemented |
-| GET | `/api/causal/graph` | Get discovered graph (nodes + edges + scores) | Implemented |
+| GET | `/api/causal/graph?id=N` or `?run_name=X` | Get stored discovered graph (latest or by id) | Implemented |
+| GET | `/api/causal/graphs?run_name=X&algorithm=Y` | List stored graph snapshots | Implemented |
+| GET | `/api/causal/graph/history?run_name=X` | All snapshots for a series (chronological comparison) | Implemented |
 | GET | `/api/causal/sources` | List all registered data sources | Implemented |
 | GET | `/api/causal/stats` | Row counts and date ranges per node | Implemented |
 | GET | `/api/causal/matrix?days=252` | Get aligned daily matrix | Planned |
@@ -308,6 +316,8 @@ New Python packages (in `requirements.txt`):
 pandas>=2.2.0        # Matrix operations, DataFrame alignment (MIT)
 tigramite>=5.2       # PCMCI/PCMCI+ for time-series causal discovery (GPL-3.0)
 lingam>=1.12         # VARLiNGAM for causal ordering (MIT)
+causal-learn>=0.1.3  # PC and GES algorithms (MIT)
+statsmodels>=0.14.0  # Granger causality tests (BSD)
 ```
 
 Planned (not yet added):
@@ -332,7 +342,7 @@ New settings (added to `config.py` or own config):
 causal_zscore_window: int = 90           # Rolling z-score window in days
 causal_backfill_years: int = 5           # How far back to fetch history
 causal_max_display_nodes: int = 100      # Max nodes to show in visualization
-causal_discovery_algorithm: str = "pcmci" # "pcmci" or "varlingam"
+causal_discovery_algorithm: str = "pcmci" # "pcmci", "granger", "pc", "ges", "varlingam"
 causal_min_edge_weight: float = 0.1      # Minimum weight to display an edge
 causal_anchor_nodes: str = "sp500,nasdaq,us_gdp_growth,unemployment_rate"  # comma-separated (env vars are strings)
 ```
@@ -347,15 +357,20 @@ causal_anchor_nodes: str = "sp500,nasdaq,us_gdp_growth,unemployment_rate"  # com
 
 ## Decisions Made
 
-1. **Edge storage:** Write discovered edges to the existing `edges` table (same schema: source_id, target_id, direction, weight). This allows reusing the existing propagation engine and frontend without changes.
-2. **LLM role:** Repositioned as interpreter/deep-dive tool, not primary scorer. LLM can explain anomalies, validate surprising edges, and analyze the top N most important nodes selectively.
+1. **Edge storage:** Discovered graphs stored as snapshots in `discovered_graphs` table (JSONB). Each snapshot contains full node list + edge list. Multiple snapshots form a time-series for comparing network evolution. NOT written to the existing `edges` table (different schema, different purpose).
+2. **LLM role:** Repositioned as interpreter/deep-dive tool, not primary scorer.
+3. **Primary algorithm:** PCMCI+ — best balance of speed (~3s), accuracy (controls for confounders), and time-series awareness.
+4. **Yahoo Finance fallback:** yfinance is primary fetcher; direct Yahoo chart API with browser headers is fallback when rate-limited (429).
+5. **Non-blocking execution:** All CPU-bound algorithms run via `asyncio.to_thread()` to keep the event loop responsive.
+6. **GES and VARLiNGAM:** Both fail on our correlated financial data (singular matrix). Kept in code but not recommended.
 
 ## Open Questions
 
 1. How often to re-run causal discovery? Daily? Weekly? On-demand only?
 2. Should the frontend have a toggle to switch between "expert graph" and "discovered graph"?
 3. Maximum number of nodes before the 3D visualization becomes unusable?
-4. Should we run graph-tool's `UncertainBlockState` on the existing expert graph as a first validation step before full causal discovery?
+4. How to accelerate PC algorithm for animated demo? (limit depth, fewer nodes, or pre-compute offline)
+5. Should different predictive targets (returns, momentum) produce separate graph series?
 
 ## References
 
