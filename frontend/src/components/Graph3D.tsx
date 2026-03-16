@@ -189,14 +189,16 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
         }}
         nodeVal={(node: any) => {
           if (isDiscovered) {
-            // Rank-based sizing: guaranteed visual hierarchy
-            // Sort all nodes by centrality, map rank to size range [2, 25]
+            // Rank-based sizing with power curve for dramatic contrast
+            // Top nodes are MUCH bigger than bottom nodes
             const sorted = [...nodes].sort((a, b) => (a.centrality ?? 0) - (b.centrality ?? 0));
             const rank = sorted.findIndex((n) => n.id === node.id);
             const total = sorted.length || 1;
-            const MIN_SIZE = 2;
-            const MAX_SIZE = 25;
-            return MIN_SIZE + (rank / total) * (MAX_SIZE - MIN_SIZE);
+            const normalizedRank = rank / total; // 0 = least important, 1 = most
+            const MIN_SIZE = 1;
+            const MAX_SIZE = 50;
+            // Power curve: square the rank so top nodes get disproportionately large
+            return MIN_SIZE + Math.pow(normalizedRank, 2) * (MAX_SIZE - MIN_SIZE);
           }
           const base = Math.max(2, (node.centrality ?? 0.02) * 100);
           if (simImpactMap) {
@@ -220,8 +222,8 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
             return "#1f2937";
           }
           if (isDiscovered) {
-            // Neutral edges — positive = light blue-grey, negative = dim orange-grey
-            return link.direction === "negative" ? "#8b6040" : "#7090a8";
+            // Bright neutral edges — positive = cyan-white, negative = warm orange
+            return link.direction === "negative" ? "#d4956a" : "#88c8e8";
           }
           return edgeDirectionColor(link.direction);
         }}
@@ -233,9 +235,9 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
             return 0.3;
           }
           if (isDiscovered) {
-            // Thickness = edge weight strength. Negative edges are thinner (dashed effect via opacity)
+            // Thickness = edge weight. Positive thicker, negative thinner for distinction
             const w = link.weight ?? 0.5;
-            return link.direction === "negative" ? Math.max(0.3, w * 2) : Math.max(0.5, w * 4);
+            return link.direction === "negative" ? Math.max(0.5, w * 3) : Math.max(1, w * 5);
           }
           return Math.max(0.5, (link.weight ?? 0.5) * 3);
         }}
@@ -251,7 +253,7 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
         linkDirectionalParticleWidth={(link: any) =>
           isDiscovered ? Math.max(0.3, (link.weight ?? 0.5) * 1.5) : Math.max(0.5, (link.weight ?? 0.5) * 2)
         }
-        linkDirectionalParticleColor={isDiscovered ? ((link: any) => link.direction === "negative" ? "#c0885a" : "#90b8d0") : undefined}
+        linkDirectionalParticleColor={isDiscovered ? ((link: any) => link.direction === "negative" ? "#f0b080" : "#a0d8f0") : undefined}
         linkDirectionalParticleSpeed={(link: any) => {
           if (simAffectedEdges) {
             const src = typeof link.source === "string" ? link.source : link.source?.id;
