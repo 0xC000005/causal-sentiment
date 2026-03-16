@@ -239,9 +239,9 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
             return 0.3;
           }
           if (isDiscovered) {
-            // Thickness = edge weight. Positive thicker, negative thinner for distinction
+            // Keep edges thin enough that particles are visible on top
             const w = link.weight ?? 0.5;
-            return link.direction === "negative" ? Math.max(0.5, w * 3) : Math.max(1, w * 5);
+            return link.direction === "negative" ? Math.max(0.3, w * 1.5) : Math.max(0.5, w * 2);
           }
           return Math.max(0.5, (link.weight ?? 0.5) * 3);
         }}
@@ -255,7 +255,7 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
           return isDiscovered ? 4 : 2;
         }}
         linkDirectionalParticleWidth={(link: any) =>
-          isDiscovered ? Math.max(1, (link.weight ?? 0.5) * 2.5) : Math.max(0.5, (link.weight ?? 0.5) * 2)
+          isDiscovered ? Math.max(2, (link.weight ?? 0.5) * 4) : Math.max(0.5, (link.weight ?? 0.5) * 2)
         }
         linkDirectionalParticleColor={isDiscovered ? ((link: any) => {
           // Particles: force strong color based on sign, not magnitude
