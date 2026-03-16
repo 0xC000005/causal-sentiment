@@ -637,6 +637,98 @@ async def get_graph_compare(
     }
 
 
+@router.post("/graph/simulate")
+async def simulate_discovered_shock(
+    node_id: str,
+    signal: float = -0.5,
+    snapshot_id: int | None = None,
+    run_name: str | None = None,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Simulate a shock on the discovered graph using the existing propagation engine."""
+    from app.causal_discovery.models import DiscoveredGraph
+    from app.graph_engine.propagation import propagate_signal, build_networkx_graph
+    from app.models.graph import EdgeDirection
+    from sqlalchemy import select
+
+    # Load snapshot
+    if snapshot_id:
+        query = select(DiscoveredGraph).where(DiscoveredGraph.id == snapshot_id)
+    elif run_name:
+        query = (
+            select(DiscoveredGraph)
+            .where(DiscoveredGraph.run_name == run_name)
+            .order_by(DiscoveredGraph.created_at.desc())
+            .limit(1)
+        )
+    else:
+        query = select(DiscoveredGraph).order_by(DiscoveredGraph.created_at.desc()).limit(1)
+
+    result = await session.execute(query)
+    graph = result.scalar_one_or_none()
+    if not graph:
+        raise HTTPException(status_code=404, detail="No discovered graph found")
+
+    # Build nodes list (minimal — just need id and label)
+    nodes_for_nx = [
+        {
+            "id": n["id"],
+            "label": n["id"],
+            "composite_sentiment": n.get("display_sentiment", 0),
+        }
+        for n in graph.nodes
+    ]
+
+    # Build edges list in the format build_networkx_graph expects
+    edges_for_nx = []
+    for e in graph.edges:
+        direction = (
+            EdgeDirection.POSITIVE
+            if e["direction"] == "positive"
+            else EdgeDirection.NEGATIVE
+        )
+        edges_for_nx.append({
+            "source_id": e["source"],
+            "target_id": e["target"],
+            "direction": direction,
+            "base_weight": e["weight"],
+            "dynamic_weight": e["weight"],
+            "transmission_lag_hours": 0.0,
+        })
+
+    # Build NetworkX graph and propagate
+    nx_graph = build_networkx_graph(nodes_for_nx, edges_for_nx)
+    prop_result = propagate_signal(nx_graph, node_id, signal)
+
+    # Format response matching the expert SimulationResult format
+    source_node_data = next((n for n in graph.nodes if n["id"] == node_id), None)
+    impacts = []
+    for nid, impact in sorted(
+        prop_result.impacts.items(), key=lambda x: abs(x[1]), reverse=True
+    ):
+        impacts.append({
+            "node_id": nid,
+            "label": nid,
+            "impact": round(impact, 4),
+            "path": prop_result.paths.get(nid, []),
+            "hops": len(prop_result.paths.get(nid, [])) - 1,
+        })
+
+    return {
+        "source_node": node_id,
+        "source_label": node_id,
+        "initial_signal": signal,
+        "current_sentiment": (
+            source_node_data.get("display_sentiment", 0) if source_node_data else 0
+        ),
+        "shock_delta": signal,
+        "regime": "discovered",
+        "impacts": impacts,
+        "total_nodes_affected": len(impacts),
+        "snapshot_id": graph.id,
+    }
+
+
 @router.get("/graph")
 async def get_graph(
     id: int | None = None,
