@@ -189,16 +189,13 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
         }}
         nodeVal={(node: any) => {
           if (isDiscovered) {
-            // Rank-based sizing with power curve for dramatic contrast
-            // Top nodes are MUCH bigger than bottom nodes
+            // Exponential sizing: only top few nodes are big, rest are small
             const sorted = [...nodes].sort((a, b) => (a.centrality ?? 0) - (b.centrality ?? 0));
             const rank = sorted.findIndex((n) => n.id === node.id);
             const total = sorted.length || 1;
-            const normalizedRank = rank / total; // 0 = least important, 1 = most
-            const MIN_SIZE = 1;
-            const MAX_SIZE = 50;
-            // Power curve: square the rank so top nodes get disproportionately large
-            return MIN_SIZE + Math.pow(normalizedRank, 2) * (MAX_SIZE - MIN_SIZE);
+            const normalizedRank = rank / (total - 1 || 1); // 0 to 1
+            // Exponential: e^(4*rank) / e^4. Most nodes cluster near 1, top few explode
+            return 1 + (Math.exp(4 * normalizedRank) - 1) / (Math.exp(4) - 1) * 60;
           }
           const base = Math.max(2, (node.centrality ?? 0.02) * 100);
           if (simImpactMap) {
