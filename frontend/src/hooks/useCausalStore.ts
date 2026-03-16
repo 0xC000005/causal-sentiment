@@ -28,6 +28,7 @@ interface CausalStore {
   topN: number | null;
   loading: boolean;
   discovering: boolean;
+  isAnimating: boolean;
   error: string | null;
 
   fetchSnapshots: () => Promise<void>;
@@ -37,6 +38,7 @@ interface CausalStore {
   setGraphSource: (source: "expert" | "discovered") => void;
   setTopN: (topN: number | null) => void;
   setError: (error: string | null) => void;
+  setIsAnimating: (animating: boolean) => void;
   getForceGraphData: () => { nodes: ForceGraphNode[]; links: ForceGraphLink[] };
 }
 
@@ -72,6 +74,7 @@ export const useCausalStore = create<CausalStore>((set, get) => ({
   topN: null,
   loading: false,
   discovering: false,
+  isAnimating: false,
   error: null,
 
   fetchSnapshots: async () => {
@@ -164,6 +167,10 @@ export const useCausalStore = create<CausalStore>((set, get) => ({
 
   setError: (error: string | null) => {
     set({ error });
+  },
+
+  setIsAnimating: (animating: boolean) => {
+    set({ isAnimating: animating });
   },
 
   getForceGraphData: () => {

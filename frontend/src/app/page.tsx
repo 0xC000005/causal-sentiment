@@ -15,6 +15,7 @@ import UserGuide from "@/components/UserGuide";
 import NodeLocator from "@/components/NodeLocator";
 import SimulationPanel from "@/components/SimulationPanel";
 import CausalPanel from "@/components/CausalPanel";
+import CausalAnimationPlayer from "@/components/CausalAnimationPlayer";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { useGraphStore, useGraphWebSocket } from "@/hooks/useGraphData";
 import { useCausalStore } from "@/hooks/useCausalStore";
@@ -57,6 +58,9 @@ export default function Home() {
         <UserGuide />
         {isExpert && <SimulationPanel />}
         {isExpert && <SentimentTimeline />}
+
+        {/* Animation player: above bottom toolbar in discovered mode */}
+        {!isExpert && <CausalAnimationPlayer />}
 
         {/* Bottom toolbar: centered */}
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-end gap-2">
