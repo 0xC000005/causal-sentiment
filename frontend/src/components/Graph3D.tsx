@@ -220,8 +220,14 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
             return "#1f2937";
           }
           if (isDiscovered) {
-            // High contrast: positive = bright white-blue, negative = bright yellow-orange
-            return link.direction === "negative" ? "#ff9933" : "#33ccff";
+            // Edge color matches the source node's sentiment color
+            // Positive edge: same color as source (signal preserved)
+            // Negative edge: opposite color (signal flipped)
+            const srcId = typeof link.source === "string" ? link.source : link.source?.id;
+            const srcNode = nodes.find((n) => n.id === srcId);
+            const srcSentiment = srcNode?.sentiment ?? 0;
+            const effectiveSentiment = link.direction === "negative" ? -srcSentiment : srcSentiment;
+            return sentimentToColor(effectiveSentiment);
           }
           return edgeDirectionColor(link.direction);
         }}
