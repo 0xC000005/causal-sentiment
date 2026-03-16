@@ -43,6 +43,21 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
   const isDiscovered = graphSource === "discovered";
   const graphRef = useRef<any>(null);
 
+  // Click-to-highlight neighbors in discovered mode
+  const [highlightedNode, setHighlightedNode] = useState<string | null>(null);
+
+  const highlightedNeighbors = useMemo(() => {
+    if (!highlightedNode || !isDiscovered) return null;
+    const currentGraph = useCausalStore.getState().currentGraph;
+    if (!currentGraph) return null;
+    const neighbors = new Set<string>([highlightedNode]);
+    for (const e of currentGraph.edges) {
+      if (e.source === highlightedNode) neighbors.add(e.target);
+      if (e.target === highlightedNode) neighbors.add(e.source);
+    }
+    return neighbors;
+  }, [highlightedNode, isDiscovered]);
+
   const simulation = useGraphStore((s) => s.simulation);
 
   const anomalyNodeIds = useMemo(
@@ -137,6 +152,11 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
   const handleClick = useCallback(
     (node: any) => {
       handleNodeClick(node as ForceGraphNode);
+      // Toggle neighbor highlight in discovered mode
+      if (isDiscovered) {
+        const nodeId = (node as any).id;
+        setHighlightedNode((prev) => (prev === nodeId ? null : nodeId));
+      }
       // Focus camera on clicked node
       if (graphRef.current && node.x !== undefined) {
         const distance = 200;
@@ -152,8 +172,12 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
         );
       }
     },
-    [handleNodeClick]
+    [handleNodeClick, isDiscovered]
   );
+
+  const handleBackgroundClick = useCallback(() => {
+    setHighlightedNode(null);
+  }, []);
 
   return (
     <div className="w-full h-full bg-gray-950">
@@ -183,6 +207,10 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
             }
             return "#374151"; // Dim gray for unaffected
           }
+          // Neighbor highlight in discovered mode: dim non-neighbors
+          if (isDiscovered && highlightedNeighbors) {
+            if (!highlightedNeighbors.has(node.id)) return "rgba(50,50,50,0.3)";
+          }
           if (portfolioSet.has(node.id)) return "#f59e0b"; // Amber for portfolio
           if (anomalyNodeIds.has(node.id)) return "#facc15"; // Yellow for anomaly
           return sentimentToColor(node.sentiment ?? 0);
@@ -195,7 +223,10 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
             const total = sorted.length || 1;
             const normalizedRank = rank / (total - 1 || 1); // 0 to 1
             // Exponential: e^(4*rank) / e^4. Most nodes cluster near 1, top few explode
-            return 1 + (Math.exp(4 * normalizedRank) - 1) / (Math.exp(4) - 1) * 60;
+            const baseVal = 1 + (Math.exp(4 * normalizedRank) - 1) / (Math.exp(4) - 1) * 60;
+            // Shrink non-neighbors when highlighting
+            if (highlightedNeighbors && !highlightedNeighbors.has(node.id)) return baseVal * 0.3;
+            return baseVal;
           }
           const base = Math.max(2, (node.centrality ?? 0.02) * 100);
           if (simImpactMap) {
@@ -220,9 +251,15 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
             return "#1f2937";
           }
           if (isDiscovered) {
+            const srcId = typeof link.source === "string" ? link.source : link.source?.id;
+            const tgtId = typeof link.target === "string" ? link.target : link.target?.id;
+            // Dim edges not connected to highlighted node
+            if (highlightedNeighbors) {
+              const connected = srcId === highlightedNode || tgtId === highlightedNode;
+              if (!connected) return "rgba(30,30,30,0.1)";
+            }
             // Edge color = source sentiment, dimmed to ~50% brightness
             // Positive edge: same sentiment as source. Negative: flipped.
-            const srcId = typeof link.source === "string" ? link.source : link.source?.id;
             const srcNode = nodes.find((n) => n.id === srcId);
             const srcSentiment = srcNode?.sentiment ?? 0;
             const effectiveSentiment = link.direction === "negative" ? -srcSentiment : srcSentiment;
@@ -239,8 +276,16 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
             return 0.3;
           }
           if (isDiscovered) {
-            // Keep edges thin enough that particles are visible on top
             const w = link.weight ?? 0.5;
+            // Neighbor highlight: thicken connected edges, near-zero for others
+            if (highlightedNeighbors) {
+              const srcId = typeof link.source === "string" ? link.source : link.source?.id;
+              const tgtId = typeof link.target === "string" ? link.target : link.target?.id;
+              const connected = srcId === highlightedNode || tgtId === highlightedNode;
+              if (!connected) return 0.1;
+              return Math.max(1.5, w * 4);
+            }
+            // Keep edges thin enough that particles are visible on top
             return link.direction === "negative" ? Math.max(0.3, w * 1.5) : Math.max(0.5, w * 2);
           }
           return Math.max(0.5, (link.weight ?? 0.5) * 3);
@@ -277,6 +322,7 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
           return 0.005;
         }}
         onNodeClick={handleClick}
+        onBackgroundClick={handleBackgroundClick}
         backgroundColor="#030712"
         showNavInfo={false}
       />
