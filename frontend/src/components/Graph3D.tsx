@@ -220,14 +220,14 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
             return "#1f2937";
           }
           if (isDiscovered) {
-            // Edge color matches the source node's sentiment color
-            // Positive edge: same color as source (signal preserved)
-            // Negative edge: opposite color (signal flipped)
+            // Edge color = source sentiment, dimmed to ~50% brightness
+            // Positive edge: same sentiment as source. Negative: flipped.
             const srcId = typeof link.source === "string" ? link.source : link.source?.id;
             const srcNode = nodes.find((n) => n.id === srcId);
             const srcSentiment = srcNode?.sentiment ?? 0;
             const effectiveSentiment = link.direction === "negative" ? -srcSentiment : srcSentiment;
-            return sentimentToColor(effectiveSentiment);
+            // Dimmed version: scale sentiment down so edges are softer than nodes
+            return sentimentToColor(effectiveSentiment * 0.5);
           }
           return edgeDirectionColor(link.direction);
         }}
@@ -255,9 +255,16 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
           return 2;
         }}
         linkDirectionalParticleWidth={(link: any) =>
-          isDiscovered ? Math.max(0.3, (link.weight ?? 0.5) * 1.5) : Math.max(0.5, (link.weight ?? 0.5) * 2)
+          isDiscovered ? Math.max(1, (link.weight ?? 0.5) * 2.5) : Math.max(0.5, (link.weight ?? 0.5) * 2)
         }
-        linkDirectionalParticleColor={isDiscovered ? ((link: any) => link.direction === "negative" ? "#f0b080" : "#a0d8f0") : undefined}
+        linkDirectionalParticleColor={isDiscovered ? ((link: any) => {
+          // Particles match edge sentiment color but brighter
+          const srcId = typeof link.source === "string" ? link.source : link.source?.id;
+          const srcNode = nodes.find((n: any) => n.id === srcId);
+          const srcSentiment = srcNode?.sentiment ?? 0;
+          const effectiveSentiment = link.direction === "negative" ? -srcSentiment : srcSentiment;
+          return sentimentToColor(effectiveSentiment * 0.8);
+        }) : undefined}
         linkDirectionalParticleSpeed={(link: any) => {
           if (simAffectedEdges) {
             const src = typeof link.source === "string" ? link.source : link.source?.id;
