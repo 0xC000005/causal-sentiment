@@ -211,6 +211,7 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
         nodeOpacity={0.9}
         linkSource="source"
         linkTarget="target"
+        linkOpacity={isDiscovered ? 1.0 : 0.6}
         linkColor={(link: any) => {
           if (simAffectedEdges) {
             const src = typeof link.source === "string" ? link.source : link.source?.id;
@@ -219,8 +220,8 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
             return "#1f2937";
           }
           if (isDiscovered) {
-            // Bright neutral edges — positive = cyan-white, negative = warm orange
-            return link.direction === "negative" ? "#d4956a" : "#88c8e8";
+            // High contrast: positive = bright white-blue, negative = bright yellow-orange
+            return link.direction === "negative" ? "#ff9933" : "#33ccff";
           }
           return edgeDirectionColor(link.direction);
         }}
