@@ -252,18 +252,21 @@ export default function Graph3D({ portfolioNodeIds = [] }: { portfolioNodeIds?: 
             if (simAffectedEdges.has(`${src}__${tgt}`)) return 6;
             return 0;
           }
-          return 2;
+          return isDiscovered ? 4 : 2;
         }}
         linkDirectionalParticleWidth={(link: any) =>
           isDiscovered ? Math.max(1, (link.weight ?? 0.5) * 2.5) : Math.max(0.5, (link.weight ?? 0.5) * 2)
         }
         linkDirectionalParticleColor={isDiscovered ? ((link: any) => {
-          // Particles match edge sentiment color but brighter
+          // Particles: force strong color based on sign, not magnitude
           const srcId = typeof link.source === "string" ? link.source : link.source?.id;
           const srcNode = nodes.find((n: any) => n.id === srcId);
           const srcSentiment = srcNode?.sentiment ?? 0;
-          const effectiveSentiment = link.direction === "negative" ? -srcSentiment : srcSentiment;
-          return sentimentToColor(effectiveSentiment * 0.8);
+          const effectiveSign = link.direction === "negative" ? -srcSentiment : srcSentiment;
+          // Use sign only: bright green or bright red, never grey
+          if (effectiveSign > 0.001) return "#4ade80";
+          if (effectiveSign < -0.001) return "#f87171";
+          return "#ffffff"; // neutral = white (always visible)
         }) : undefined}
         linkDirectionalParticleSpeed={(link: any) => {
           if (simAffectedEdges) {
